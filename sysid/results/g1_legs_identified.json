@@ -1,0 +1,123 @@
+{
+  "provenance": {
+    "date": "2026-09-21",
+    "robot": "Unitree G1, hoisted, feet clear of floor",
+    "model": "fixed base (pelvis welded), collisions disabled, legs only (12 joints)",
+    "datasets": {
+      "fitted": [
+        "chirp_1_gc",
+        "chirp_1b_gc"
+      ],
+      "holdout": [
+        "chirp_0_gc",
+        "chirp_kp10_gc"
+      ]
+    },
+    "open_loop_rmse_rad": {
+      "nominal_on_chirp_0": 0.036538,
+      "identified_on_chirp_0_gc": 0.02507,
+      "identified_on_chirp_kp10_gc": 0.024556,
+      "run_to_run_floor": 0.0051
+    },
+    "untested": "no ground contact, no body load, no base motion"
+  },
+  "joint_order": [
+    "left_hip_pitch_joint",
+    "left_hip_roll_joint",
+    "left_hip_yaw_joint",
+    "left_knee_joint",
+    "left_ankle_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_hip_pitch_joint",
+    "right_hip_roll_joint",
+    "right_hip_yaw_joint",
+    "right_knee_joint",
+    "right_ankle_pitch_joint",
+    "right_ankle_roll_joint"
+  ],
+  "armature_fitted": {
+    "left_hip_pitch_joint": 0.001,
+    "left_hip_roll_joint": 0.00100001,
+    "left_hip_yaw_joint": 0.0208704,
+    "left_knee_joint": 0.001,
+    "left_ankle_pitch_joint": 0.00968472,
+    "left_ankle_roll_joint": 0.0599291,
+    "right_hip_pitch_joint": 0.001,
+    "right_hip_roll_joint": 0.0173929,
+    "right_hip_yaw_joint": 0.0022028,
+    "right_knee_joint": 0.001,
+    "right_ankle_pitch_joint": 0.0586232,
+    "right_ankle_roll_joint": 0.001
+  },
+  "damping_fitted": {
+    "left_hip_pitch_joint": 3.12337,
+    "left_hip_roll_joint": 0.577465,
+    "left_hip_yaw_joint": 0.359039,
+    "left_knee_joint": 0.001,
+    "left_ankle_pitch_joint": 1.4569,
+    "left_ankle_roll_joint": 0.392898,
+    "right_hip_pitch_joint": 3.03246,
+    "right_hip_roll_joint": 0.658956,
+    "right_hip_yaw_joint": 0.329765,
+    "right_knee_joint": 0.001,
+    "right_ankle_pitch_joint": 0.807752,
+    "right_ankle_roll_joint": 0.001
+  },
+  "frictionloss_measured": {
+    "left_hip_pitch_joint": 0.53,
+    "left_hip_roll_joint": 0.59,
+    "left_hip_yaw_joint": 0.16,
+    "left_knee_joint": 0.67,
+    "left_ankle_pitch_joint": 0.21,
+    "left_ankle_roll_joint": 0.21,
+    "right_hip_pitch_joint": 0.53,
+    "right_hip_roll_joint": 0.59,
+    "right_hip_yaw_joint": 0.16,
+    "right_knee_joint": 0.85,
+    "right_ankle_pitch_joint": 0.2,
+    "right_ankle_roll_joint": 0.21
+  },
+  "actuator_gain_scale": {
+    "left_hip_pitch_joint": 0.952,
+    "left_hip_roll_joint": 0.936,
+    "left_hip_yaw_joint": 0.86,
+    "left_knee_joint": 0.82,
+    "left_ankle_pitch_joint": 0.755,
+    "left_ankle_roll_joint": 1.0,
+    "right_hip_pitch_joint": 0.943,
+    "right_hip_roll_joint": 0.925,
+    "right_hip_yaw_joint": 0.847,
+    "right_knee_joint": 0.857,
+    "right_ankle_pitch_joint": 1.0,
+    "right_ankle_roll_joint": 1.0
+  },
+  "identifiability": {
+    "actuator_gain_scale": "IDENTIFIED. 30x cost change over +-20%; tau_est regression and a direct gain sweep agree within 6%; validated by predicting a 2x-gain holdout. Randomise +-5%.",
+    "damping_hips": "IDENTIFIED. Left/right mirrored joints agree within 14%. Randomise +-30%.",
+    "damping_knees_ankles": "NOT identified (pinned at bound). Randomise 0.01-2.0.",
+    "frictionloss": "NOT identifiable from motion: five fits spanned 0.001-1.16 with <3% change in accuracy. Values here are STATIC breakaway measured from gravity. Randomise 0.2-2.0 N.m.",
+    "armature": "NOT identified. Mirrored joints disagree 6-60x. Prefer motor spec (7520_14 0.0102, 7520_22 0.0251, 5020x2 0.0072). Randomise 0.5-3x."
+  },
+  "randomisation_ranges": {
+    "actuator_gain_scale": [
+      0.95,
+      1.05
+    ],
+    "damping_hips_rel": [
+      0.7,
+      1.3
+    ],
+    "damping_knees_ankles_abs": [
+      0.01,
+      2.0
+    ],
+    "frictionloss_abs": [
+      0.2,
+      2.0
+    ],
+    "armature_rel_to_spec": [
+      0.5,
+      3.0
+    ]
+  }
+}
