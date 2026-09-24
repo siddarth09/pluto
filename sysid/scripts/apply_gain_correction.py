@@ -1,16 +1,11 @@
-"""Correct each joint's modelled actuator gain to the gain the robot actually delivers.
+"""Correct each joint's modelled actuator gain to what the robot delivers.
 
-The pipeline treats Kp/Kd as known and never fits them, but regressing the robot's
-own tau_est on the commanded Kp*(q_des-q) - Kd*qdot gives a slope well below 1 --
-0.82 at the left knee, where an independent gain sweep put the optimum at 0.77.
-An uncorrected gain error is a bias no joint parameter can absorb.
+The pipeline treats Kp/Kd as known and never fits them, but regressing tau_est on
+the commanded Kp*(q_des-q) - Kd*qdot gives a slope well below 1. Writes <name>_gc.pt
+copies with kp/kd scaled per joint.
 
-Writes `<name>_gc.pt` copies with kp/kd scaled per joint. Assumes both scale by
-the same factor, which is what a single-slope regression can support.
-
-Joints whose regression is not credible (low correlation, or slope outside
-[MIN, MAX]) are left at 1.0 -- the parallel ankle linkage means per-motor tau_est
-does not map onto the pitch/roll joint torques.
+Joints whose regression is not credible are left at 1.0: the parallel ankle
+linkage means per-motor tau_est does not map onto pitch/roll joint torque.
 """
 
 import sys

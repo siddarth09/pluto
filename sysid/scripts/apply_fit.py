@@ -1,12 +1,10 @@
 """Write identified joint parameters from a fit into the robot XML.
 
-`my_fit` reports results in an HTML page that eval_fit cannot read. This takes the
-saved `opt_params.yaml`, writes explicit armature/damping/frictionloss attributes
-onto each joint in a copy of the frozen baseline, and installs it as the model
-eval_fit loads by default. The baseline stays available via `eval_fit --original`.
+my_fit reports results in an HTML page eval_fit cannot read. This takes the saved
+opt_params.yaml, writes armature/damping/frictionloss onto each joint in a copy of
+the frozen baseline, and installs it as the model eval_fit loads by default.
 
-    python scripts/apply_fit.py <results_dir>/opt_params.yaml
-    python scripts/apply_fit.py <...>/opt_params.yaml --dry-run
+    python scripts/apply_fit.py <results_dir>/opt_params.yaml [--dry-run]
 """
 
 import argparse

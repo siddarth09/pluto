@@ -1,11 +1,10 @@
-"""Record G1 leg state into the dataset format sim2real-robot-identification expects.
+"""Record G1 leg state in the sim2real-robot-identification dataset format.
 
-Read-only: subscribes to rt/lowstate and publishes nothing. lowstate arrives at
-~1 kHz and is decimated to `--hz` (the pipeline's config.frequency_collection).
+Read-only: subscribes to rt/lowstate, publishes nothing. lowstate arrives at
+~1 kHz and is decimated to --hz.
 
-For a passive (zero-torque) recording pass --passive: kp/kd are written as zeros
-so the fitter simulates the same unactuated plant, and des_dof_pos is filled with
-the measured angles since it is unused when the gains are zero.
+--passive writes kp/kd as zeros for a zero-torque recording, and fills
+des_dof_pos with the measured angles since it is unused at zero gain.
 
     python scripts/record_lowstate.py --passive --duration 30 --out drop_0.pt
 """

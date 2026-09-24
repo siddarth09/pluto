@@ -1,15 +1,14 @@
 """Commanded leg excitation on the real G1, recorded in the sysid dataset format.
 
-Releases the motion-control service, then runs a stepped-frequency excitation
-under a soft position servo, and writes the 7-key .pt.
+Releases the motion-control service, runs a stepped-frequency excitation under a
+soft position servo, writes the 7-key .pt.
 
-Only safe with the robot hoisted and both feet clear of the floor. Sequence:
-  hold current pose -> ramp gains in -> ramp to trajectory start -> chirp
-  -> ramp back -> ramp gains out
-Every phase is bounded; the watchdog zeroes gains on excess error or velocity.
+Only safe with the robot hoisted and both feet clear. Sequence: hold current pose
+-> ramp gains in -> ramp to trajectory start -> excite -> ramp back -> gains out.
+The watchdog zeroes gains on excess error or velocity.
 
-    python scripts/excite_legs.py --dry-run          # no release, no publish
-    python scripts/excite_legs.py --duration 20
+    python scripts/excite_legs.py --dry-run
+    python scripts/excite_legs.py --only left_knee --centre 1.0 --amp 0.8
 """
 
 import argparse
@@ -43,22 +42,16 @@ LIMIT_LO = np.array([-2.5307, -0.5236, -2.7576, -0.087267, -0.87267, -0.2618,
                      -2.5307, -2.9671, -2.7576, -0.087267, -0.87267, -0.2618])
 LIMIT_HI = np.array([2.8798, 2.9671, 2.7576, 2.8798, 0.5236, 0.2618,
                      2.8798, 0.5236, 2.7576, 2.8798, 0.5236, 0.2618])
-# Static friction lower bounds measured on hardware (README finding #6): the
-# gravity torque each joint held without moving. Roll joints were near
-# gravity-neutral so their bound was vacuous; they inherit the ankle figure.
+# static friction lower bounds: gravity torque each joint held without moving.
+# Roll joints were gravity-neutral, so they inherit the ankle figure.
 STICTION = np.array([0.53, 0.59, 0.16, 0.85, 0.21, 0.21,
                      0.53, 0.59, 0.16, 0.85, 0.21, 0.21])
-# Centre of the excitation: a gravity-neutral hanging pose, NOT the joint range
-# midpoint. Midpoint centring puts hip_roll at 1.22 rad (70 deg abduction), where
-# holding the leg costs ~25 N m and a soft servo can only deliver that with ~0.5
-# rad of steady-state error. hip_roll is offset outward per leg so the legs do
-# not close on each other.
+# Gravity-neutral hanging pose, not the joint range midpoint: midpoint puts
+# hip_roll at 70 deg abduction, ~25 N m to hold. hip_roll offset outward per leg.
 NEUTRAL = np.array([0.0, 0.20, 0.0, 0.45, -0.15, 0.0,
                     0.0, -0.20, 0.0, 0.45, -0.15, 0.0])
-# Amplitude ceiling per joint, set by the GRAVITY budget rather than joint limits:
-# holding the leg at amplitude A costs ~C*sin(A), and a soft servo pays for that
-# with C*sin(A)/kp of steady droop. hip_pitch binds hardest -- lowest kp of the
-# big joints (20.1) against the longest gravity lever (C ~ 20 N m).
+# Amplitude ceiling from the gravity budget, not joint limits: holding at A
+# costs ~C*sin(A) and the servo pays C*sin(A)/kp in droop. hip_pitch binds.
 AMP_MAX = np.array([0.30, 0.45, 0.60, 0.35, 0.45, 0.13,
                     0.30, 0.45, 0.60, 0.35, 0.45, 0.13])
 NAMES = ["left_hip_pitch", "left_hip_roll", "left_hip_yaw", "left_knee",
@@ -70,13 +63,9 @@ MAX_TRACK_ERR = 0.60   # rad, overridable; see --max-err
 MAX_VEL = 8.0          # rad/s
 
 
-# Stepped-frequency segments instead of one continuous chirp.
-# A continuous 1/f-amplitude sweep holds peak velocity constant but leaves
-# acceleration growing only as f, and its amplitude at the top of the sweep falls
-# below the stiction threshold -- so the high-frequency half carries no usable
-# qddot and armature becomes unidentifiable. Constant amplitude gives
-# acceleration ~ f^2, which is what armature needs.
-#   (freq Hz, duration s, fixed amplitude rad or None for velocity-capped)
+# Stepped frequencies, not a continuous chirp: 1/f amplitude leaves acceleration
+# growing only as f, and the top of the sweep falls below the stiction threshold.
+# (freq Hz, duration s, fixed amplitude rad or None for velocity-capped)
 SEGMENTS = ((0.5, 12.0, None),    # damping, frictionloss: slow, large, many reversals
             (1.0, 6.0, None),
             (2.0, 6.0, "hf"),     # armature: acceleration scales as f^2
@@ -88,13 +77,12 @@ def segmented(lo, hi, dt, v_cap, hf_amp, amp_scale, taper=0.5, only=None,
     """Stepped-frequency excitation. Returns (n, 12) positions and a per-segment table."""
     centre = NEUTRAL.copy()
     amp_max = AMP_MAX.copy()
-    # Single-joint runs can go much further: the other joints hold still, so this
-    # joint's own limits and gravity droop are the only constraints.
+    # single-joint runs: only this joint's limits and droop constrain it
     if only is not None and centre_override is not None:
         centre[only] = centre_override
     if only is not None and amp_override is not None:
         amp_max[only] = amp_override
-    # Usable swing is the distance to the nearest limit, not half the range.
+    # usable swing is distance to the nearest limit, not half the range
     half = np.minimum(np.minimum(centre - lo, hi - centre) - 0.10, amp_max)
     offs = np.linspace(0.0, 2.0 * np.pi, len(lo), endpoint=False)
     mask = np.ones(len(lo)) if only is None else np.zeros(len(lo))
@@ -110,9 +98,7 @@ def segmented(lo, hi, dt, v_cap, hf_amp, amp_scale, taper=0.5, only=None,
         else:
             amp = np.minimum(half, v_cap / w)
         amp = amp * amp_scale * mask
-        # Taper each segment to zero at both ends so the commanded position is
-        # exactly `centre` at every boundary: no step between segments despite
-        # the per-joint phase offsets.
+        # taper to zero at both ends so every segment boundary lands on `centre`
         env = np.ones(n)
         k = max(1, int(round(taper / dt)))
         ramp = smoothstep(k)
@@ -189,7 +175,7 @@ def main() -> None:
     print(f"  amplitude span {(q_ex.max(0) - q_ex.min(0)).round(3)}")
     print(f"  kp {kp.round(1)}")
     print(f"  kd {kd.round(2)}")
-    # An amplitude below the breakaway error produces chatter, not motion.
+    # below the breakaway error you get chatter, not motion
     stiction_err = STICTION / kp
     hf = args.hf_amp * args.amp_scale
     print(f"  breakaway err (measured stiction / kp) {stiction_err.round(3)} rad")
@@ -238,7 +224,7 @@ def main() -> None:
     cmd.mode_machine = state["mode_machine"]
 
     n_ramp = int(args.ramp / DT)
-    # Phase plan: hold at gains 0 -> gains in -> move to q_ex[0] -> chirp -> back -> gains out
+    # gains in -> move to q_ex[0] -> excite -> back -> gains out
     plan = []
     plan += [(q_start, g) for g in np.linspace(0.0, 1.0, n_ramp)]
     for a in smoothstep(n_ramp):
@@ -254,8 +240,7 @@ def main() -> None:
     aborted = None
     next_t = time.time()
     for k, (q_des, gain) in enumerate(plan):
-        # Record state BEFORE applying this command: state k pairs with control k,
-        # matching eval_fit.simulate_open_loop and the fitter's rollout.
+        # record state BEFORE the command: state k pairs with control k
         rec_q.append(state["q"].copy()); rec_dq.append(state["dq"].copy())
         rec_des.append(q_des.copy()); rec_tau.append(state["tau"].copy())
         rec_temp.append(state["temp"].copy())
@@ -285,7 +270,7 @@ def main() -> None:
         if sleep > 0:
             time.sleep(sleep)
 
-    # Always leave the joints limp.
+    # always leave the joints limp
     for _ in range(100):
         for j in range(35):
             mc = cmd.motor_cmd[j]

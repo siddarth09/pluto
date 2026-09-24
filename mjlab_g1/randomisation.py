@@ -1,26 +1,12 @@
-"""Domain randomisation sized by the system identification.
+"""Domain randomisation, with ranges set by the identifiability analysis.
 
-mjlab's velocity task randomises foot friction, encoder bias, base CoM, pushes and
-reset pose -- but nothing about the joints or actuators. That is the gap the
-identification fills, and it matters most: a systematic actuator-gain error is in
-the same direction on every sample, so no amount of randomising other parameters
-covers it.
+mjlab's velocity task randomises foot friction, encoder bias, base CoM, pushes
+and reset pose, but nothing about the joints or actuators. These five terms are
+additive.
 
-Each range below is set by how well the parameter was actually determined, not by
-a uniform guess. See pluto/sysid/README.md.
-
-  actuator gain   IDENTIFIED (30x cost change over +-20%, two independent methods
-                  within 6%, validated across a 2x gain change) -> tight, +-5%
-  damping, hips   IDENTIFIED (left/right mirrored joints agree within 14%) -> +-30%
-  damping, other  NOT identified (pinned at bound) -> wide, absolute
-  frictionloss    NOT identifiable from motion; five fits spanned 0.001-1.16 with
-                  <3% accuracy change -> wide, absolute, centred on the measured
-                  static breakaway values
-  armature        NOT identified (mirrored joints disagree 6-60x) -> wide, relative
-                  to the motor spec
-
-Only leg joints are scoped: nothing above the pelvis was identified, and applying
-leg-derived ranges to the arms would be inventing data.
+Widths come from how well each parameter was actually determined -- see
+sysid/results/g1_legs_identified.json. Scoped to leg joints: nothing above the
+pelvis was identified.
 """
 
 from __future__ import annotations
@@ -33,12 +19,6 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 HIP_JOINTS = (r".*_hip_pitch_joint", r".*_hip_roll_joint", r".*_hip_yaw_joint")
 KNEE_ANKLE_JOINTS = (r".*_knee_joint", r".*_ankle_pitch_joint", r".*_ankle_roll_joint")
 LEG_JOINTS = HIP_JOINTS + KNEE_ANKLE_JOINTS
-
-# mode="startup" samples once per environment, matching how mjlab's own
-# foot_friction / encoder_bias / base_com terms work. Switching to "reset"
-# resamples every episode, which covers the ranges far better for the same env
-# count; the dr functions take env_ids so it is supported. Left at startup to
-# match the pattern already known to work in this codebase.
 MODE = "startup"
 
 

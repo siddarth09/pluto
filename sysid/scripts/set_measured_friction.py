@@ -1,12 +1,9 @@
 """Write the hardware-measured static friction into the model's frictionloss.
 
-The values are the gravity torque each joint held without moving while hanging at
-zero torque (README finding #6) -- a lower bound on breakaway friction, measured
-with no estimator involved. Roll joints sat near gravity-neutral so their bound
-was vacuous; they inherit the nearest informative figure.
+Values are the gravity torque each joint held without moving at zero torque -- a
+lower bound on breakaway friction, measured with no estimator involved.
 
-Pair with `my_fit --freeze frictionloss --start-from-nominal` so the fit cannot
-trade friction against damping.
+Pair with `my_fit --freeze frictionloss --start-from-nominal`.
 """
 
 import shutil
