@@ -84,13 +84,99 @@ def projected_gravity(quat_wxyz: np.ndarray) -> np.ndarray:
     ])
 
 
+# tracking policy observation layout, in order, no history:
+#   command (ref joint_pos 29 + ref joint_vel 29) | motion_anchor_ori_b 6
+#   | base_ang_vel 3 | joint_pos 29 | joint_vel 29 | actions 29
+DANCE_OBS_DIM = 29 + 29 + 6 + 3 + 29 + 29 + 29
+# index of torso_link in the tracking task's 14 tracked bodies
+DANCE_ANCHOR_BODY = 7
+WAIST_IDX = (12, 13, 14)        # yaw, roll, pitch in SDK order
+
+
+def _dance_frames(sess, names) -> int:
+    """Length of the baked-in clip, found by walking time_step until it repeats."""
+    ref = lambda k: sess.run(None, {"obs": np.zeros((1, DANCE_OBS_DIM), np.float32),
+                                    "time_step": np.array([[float(k)]], np.float32)}
+                             )[names["joint_pos"]][0]
+    lo, hi = 1, 4096
+    first = ref(0)
+    while lo < hi:                      # the loader clamps or wraps past the end
+        mid = (lo + hi) // 2
+        if np.allclose(ref(mid), ref(mid + 1), atol=1e-6):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo + 1
+
+
+def quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Hamilton product, wxyz."""
+    w1, x1, y1, z1 = a
+    w2, x2, y2, z2 = b
+    return np.array([
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    ])
+
+
+def quat_inv(q: np.ndarray) -> np.ndarray:
+    return np.array([q[0], -q[1], -q[2], -q[3]]) / float(q @ q)
+
+
+def quat_yaw_only(q: np.ndarray) -> np.ndarray:
+    """The yaw component of q, as a quaternion. Matches mjlab's yaw_quat."""
+    yaw = np.arctan2(2.0 * (q[0] * q[3] + q[1] * q[2]),
+                     1.0 - 2.0 * (q[2] ** 2 + q[3] ** 2))
+    return np.array([np.cos(0.5 * yaw), 0.0, 0.0, np.sin(0.5 * yaw)])
+
+
+def mat_from_quat(q: np.ndarray) -> np.ndarray:
+    w, x, y, z = q
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+    ])
+
+
+def torso_quat(imu_quat: np.ndarray, q: np.ndarray, frame: str) -> np.ndarray:
+    """Torso orientation in the world from whatever the IMU reports.
+
+    The tracking anchor is torso_link. If the IMU sits in the pelvis, the waist
+    yaw/roll/pitch rotations have to be composed on; if it is already the torso,
+    it is used as is. --probe-imu decides which.
+    """
+    if frame == "torso":
+        return imu_quat
+    yaw, roll, pitch = q[WAIST_IDX[0]], q[WAIST_IDX[1]], q[WAIST_IDX[2]]
+    cz, sz = np.cos(0.5 * yaw), np.sin(0.5 * yaw)
+    cx, sx = np.cos(0.5 * roll), np.sin(0.5 * roll)
+    cy, sy = np.cos(0.5 * pitch), np.sin(0.5 * pitch)
+    q_waist = quat_mul(quat_mul(np.array([cz, 0.0, 0.0, sz]),
+                                np.array([cx, sx, 0.0, 0.0])),
+                       np.array([cy, 0.0, sy, 0.0]))
+    return quat_mul(imu_quat, q_waist)
+
+
+def rot6_rel(robot_quat: np.ndarray, ref_quat: np.ndarray) -> np.ndarray:
+    """motion_anchor_ori_b: reference anchor orientation in the robot anchor frame,
+    as the first two COLUMNS of the rotation matrix, row-major. 6 values.
+
+    Mirrors mjlab's subtract_frame_transforms + matrix_from_quat(...)[..., :2].
+    """
+    rel = quat_mul(quat_inv(robot_quat), ref_quat)
+    return mat_from_quat(rel)[:, :2].reshape(-1)
+
+
 class Keyboard:
     """Non-blocking single-key reader. Hold-to-move: terminal key repeat keeps the
     command alive, and it decays to zero TELEOP_HOLD_S after the last keypress so
     a walk-away cannot leave the robot driving."""
 
     HELP = ("  w/s forward/back   a/d turn left/right   <- -> strafe   "
-            "space stop   ^C settle+hold   x exit")
+            "space stop   x DANCE   z/^C settle+hold")
 
 
     def __init__(self):
@@ -101,6 +187,7 @@ class Keyboard:
         self.cmd = np.zeros(3)
         self.last_key = 0.0
         self.quit = False
+        self.dance = False     # x: hand off to the motion-tracking policy
         self._esc = 0          # arrow keys arrive as ESC [ A/B/C/D
 
     def __enter__(self):
@@ -151,7 +238,9 @@ class Keyboard:
                 self.cmd[1] -= TELEOP_STEP        # strafe right
             elif c == " ":
                 self.cmd[:] = 0.0
-            elif c in ("x", "\x03"):        # x or Ctrl-C: settle and hold
+            elif c == "x":                  # hand off to the dance policy
+                self.dance = True
+            elif c in ("z", "\x03"):        # z or Ctrl-C: settle and hold
                 self.quit = True
             # all other bytes ignored
         now = time.time()
@@ -219,6 +308,22 @@ def main() -> None:
     ap.add_argument("--idle-exit", type=float, default=TELEOP_IDLE_EXIT_S,
                     help="teleop: exit after this many seconds with no keypress. "
                          "0 disables (not recommended).")
+    ap.add_argument("--dance-onnx", default=None,
+                    help="motion-tracking policy .onnx; default = newest mimic run. "
+                         "Press x during teleop to hand off to it.")
+    ap.add_argument("--dance-handoff", type=float, default=2.5,
+                    help="seconds to ramp from the walking pose to the dance's "
+                         "first frame before the tracking policy takes over. The "
+                         "tracking policy expects to start ON the reference; "
+                         "switching instantly shows it a large frame-0 error.")
+    ap.add_argument("--imu-frame", choices=("torso", "pelvis"), default="pelvis",
+                    help="which body LowState_.imu_state.quaternion reports. The "
+                         "tracking anchor is torso_link, so a pelvis IMU has the "
+                         "three waist joints composed onto it. Use --probe-imu.")
+    ap.add_argument("--probe-imu", action="store_true",
+                    help="move the waist and report whether the IMU quaternion "
+                         "follows it. Decides --imu-frame. Publishes to the waist "
+                         "only, small amplitude.")
     ap.add_argument("--teleop", action="store_true",
                     help=f"keyboard driving. vx +-{TELEOP_VX}, vy +-{TELEOP_VY}, "
                          f"wz +-{TELEOP_WZ} rad/s")
@@ -261,6 +366,29 @@ def main() -> None:
     print(f"policy : {Path(onnx_path).name}  input {in_dim}  history {hist_len}")
     expect = (3 + 3 + N_MOTOR + N_MOTOR + N_MOTOR + 3) * hist_len
     assert in_dim == expect, f"onnx expects {in_dim}, layout gives {expect}"
+
+    # the tracking policy: obs[154] + time_step -> actions[29] plus the reference
+    # motion at that step, so the clip is baked into the graph and the robot does
+    # not need the npz.
+    dance_sess = dance_names = None
+    dance_path = args.dance_onnx
+    if dance_path is None:
+        runs = sorted(Path("/home/sid/projects25/src/logs/rsl_rl/"
+                           "pluto_g1_mimic_dance17").glob("*/*.onnx"))
+        dance_path = str(runs[-1]) if runs else None
+    if dance_path is not None:
+        dance_sess = ort.InferenceSession(dance_path,
+                                          providers=["CPUExecutionProvider"])
+        dance_names = {o.name: i for i, o in enumerate(dance_sess.get_outputs())}
+        d_in = {i.name: i.shape[-1] for i in dance_sess.get_inputs()}
+        assert d_in.get("obs") == DANCE_OBS_DIM, \
+            f"dance onnx wants obs {d_in.get('obs')}, layout gives {DANCE_OBS_DIM}"
+        n_frames = _dance_frames(dance_sess, dance_names)
+        print(f"dance  : {Path(dance_path).name}  obs {d_in['obs']}  "
+              f"{n_frames} frames = {n_frames / HZ:.1f}s   (press x)")
+    else:
+        n_frames = 0
+        print("dance  : none found -- x will do nothing")
 
     # per-term history, concatenated in this order
     h_ang = History(3, hist_len)
@@ -325,6 +453,74 @@ def main() -> None:
             f"~/g1_real_env/bin/python scripts/release_mode.py"
         )
 
+    if args.probe_imu:
+        if args.sim:
+            raise SystemExit("--probe-imu needs the real robot")
+        print("\nPROBE: moves waist_pitch +-0.12 rad and watches the IMU quaternion.")
+        print("The robot must be hoisted or standing stably. Legs are held, not limp.")
+        if input("Type PROBE to proceed: ").strip() != "PROBE":
+            print("aborted")
+            return
+        pub = ChannelPublisher("rt/lowcmd", LowCmd_)
+        pub.Init()
+        crc = CRC()
+        cmd = unitree_hg_msg_dds__LowCmd_()
+        cmd.mode_pr = 0
+        cmd.mode_machine = state["mode_machine"]
+        hold = state["q"].copy()
+        rec = []
+        n = int(6.0 / DT)
+        next_t = time.time()
+        for k in range(n):
+            g = min(1.0, k / (0.5 / DT))            # ease the gains in
+            wp = 0.12 * np.sin(2.0 * np.pi * 0.5 * k * DT)
+            q_des = hold.copy()
+            q_des[WAIST_IDX[2]] = hold[WAIST_IDX[2]] + wp
+            for j in range(N_MOTOR):
+                mc = cmd.motor_cmd[j]
+                mc.mode, mc.dq, mc.tau = 1, 0.0, 0.0
+                mc.q = float(np.clip(q_des[j], jlo[j], jhi[j]))
+                mc.kp = float(kp[j] * g)
+                mc.kd = float(kd[j] * g)
+            for j in range(N_MOTOR, N_SLOT):
+                mc = cmd.motor_cmd[j]
+                mc.mode, mc.q, mc.dq, mc.tau, mc.kp, mc.kd = 1, 0.0, 0.0, 0.0, 0.0, 0.0
+            cmd.crc = crc.Crc(cmd)
+            pub.Write(cmd)
+            rec.append((state["q"][WAIST_IDX[2]], state["quat"].copy()))
+            next_t += DT
+            time.sleep(max(0.0, next_t - time.time()))
+        for g in np.linspace(1.0, 0.0, int(1.0 / DT)):     # gains out
+            for j in range(N_MOTOR):
+                mc = cmd.motor_cmd[j]
+                mc.mode, mc.dq, mc.tau = 1, 0.0, 0.0
+                mc.q = float(hold[j]); mc.kp = float(kp[j] * g); mc.kd = float(kd[j] * g)
+            cmd.crc = crc.Crc(cmd)
+            pub.Write(cmd)
+            time.sleep(DT)
+        wq = np.array([r[0] for r in rec])
+        quats = np.stack([r[1] for r in rec])
+        # pitch of the reported quaternion
+        sinp = 2.0 * (quats[:, 0] * quats[:, 2] - quats[:, 3] * quats[:, 1])
+        pitch = np.arcsin(np.clip(sinp, -1.0, 1.0))
+        swing = wq.max() - wq.min()
+        follow = pitch.max() - pitch.min()
+        print(f"\n  waist_pitch travelled   {swing:.4f} rad")
+        print(f"  IMU pitch travelled     {follow:.4f} rad")
+        ratio = follow / max(swing, 1e-6)
+        print(f"  ratio                   {ratio:.2f}")
+        if swing < 0.05:
+            print("\n  INCONCLUSIVE: the waist barely moved. Raise the gains or "
+                  "check the joint is free.")
+        elif ratio > 0.6:
+            print("\n  --imu-frame torso   (the IMU follows the waist)")
+        elif ratio < 0.25:
+            print("\n  --imu-frame pelvis  (the IMU ignores the waist)")
+        else:
+            print("\n  AMBIGUOUS. Re-run; if it stays here, suspect the robot "
+                  "rocking on its feet rather than the waist moving.")
+        return
+
     q_start = state["q"].copy()
     print(f"mode_machine {state['mode_machine']}   |quat| {np.linalg.norm(state['quat']):.4f}")
     print(f"gravity_b    {projected_gravity(state['quat']).round(3)}  (upright ~ [0,0,-1])")
@@ -341,6 +537,35 @@ def main() -> None:
               f"   (release keys -> decays to stop)")
         print("  holonomic: vx and vy combine, so w+a walks diagonally forward-left")
     last_action = np.zeros(N_MOTOR)
+    # dance handoff state
+    dance = {"mode": "walk", "step": 0, "yaw_fix": np.array([1.0, 0.0, 0.0, 0.0]),
+             "act": np.zeros(N_MOTOR), "t0": 0.0}
+
+    def dance_ref(step: int) -> dict:
+        """Reference joint pos/vel and body quats at `step`, from the graph."""
+        out = dance_sess.run(None, {
+            "obs": np.zeros((1, DANCE_OBS_DIM), np.float32),
+            "time_step": np.array([[float(step)]], np.float32)})
+        return {
+            "joint_pos": out[dance_names["joint_pos"]][0],
+            "joint_vel": out[dance_names["joint_vel"]][0],
+            "body_quat_w": out[dance_names["body_quat_w"]][0],
+        }
+
+    def build_dance_obs(ref: dict) -> np.ndarray:
+        robot_q = torso_quat(state["quat"], state["q"], args.imu_frame)
+        # anchor the reference's heading to the robot's at handoff, the way RSI
+        # puts the robot on the reference at episode start in training. Without
+        # this the policy sees a constant, arbitrary yaw error.
+        ref_q = quat_mul(dance["yaw_fix"], ref["body_quat_w"][DANCE_ANCHOR_BODY])
+        return np.concatenate([
+            ref["joint_pos"], ref["joint_vel"],
+            rot6_rel(robot_q, ref_q),
+            state["gyro"],
+            state["q"] - default,
+            state["dq"],
+            dance["act"],
+        ])
 
     def build_obs() -> np.ndarray:
         h_ang.append(state["gyro"])
@@ -462,6 +687,28 @@ def main() -> None:
                     cmd_vec[:] = kb.poll()
                     if kb.quit:
                         stop["n"], stop["t"] = 1, time.time()
+                    if kb.dance:
+                        kb.dance = False
+                        if dance_sess is None:
+                            print("\n  no dance policy loaded, ignoring x")
+                        elif dance["mode"] == "walk":
+                            dance["mode"] = "handoff"
+                            dance["step"] = 0
+                            cmd_vec[:] = 0.0
+                            ref0 = dance_ref(0)
+                            dance["target"] = np.clip(ref0["joint_pos"], jlo, jhi)
+                            dance["from"] = state["q"].copy()
+                            dance["k"] = 0
+                            dance["n"] = max(1, int(args.dance_handoff / DT))
+                            # freeze the heading offset now, once
+                            robot_q = torso_quat(state["quat"], state["q"],
+                                                 args.imu_frame)
+                            ref_q = ref0["body_quat_w"][DANCE_ANCHOR_BODY]
+                            dance["yaw_fix"] = quat_mul(
+                                quat_yaw_only(robot_q), quat_inv(quat_yaw_only(ref_q)))
+                            print(f"\n  x -> handoff: ramping to the dance's first "
+                                  f"frame over {args.dance_handoff:.1f}s "
+                                  f"(max move {np.abs(dance['target'] - dance['from']).max():.2f} rad)")
                 else:
                     cmd_vec[:] = 0.0        # settling: zero command, policy still on
                 idle_s = time.time() - kb.last_key
@@ -469,19 +716,65 @@ def main() -> None:
                         and idle_s > args.idle_exit):
                     aborted = f"idle for {idle_s:.0f}s, no keypress"
                     stop["n"], stop["t"] = 1, time.time()
-                print(f"\r  vx {cmd_vec[0]:+.2f}  vy {cmd_vec[1]:+.2f}  "
-                      f"wz {cmd_vec[2]:+.2f}   t {time.time() - t_start:5.0f}s  "
-                      f"idle {idle_s:4.1f}s   ", end="", flush=True)
+                if dance["mode"] == "dance":
+                    print(f"\r  DANCE  frame {dance['step']:4d}/{n_frames}  "
+                          f"t {time.time() - dance['t0']:5.1f}s        ",
+                          end="", flush=True)
+                elif dance["mode"] in ("handoff", "handoff_back"):
+                    print(f"\r  {dance['mode']}  {dance['k']}/{dance['n']}        ",
+                          end="", flush=True)
+                else:
+                    print(f"\r  vx {cmd_vec[0]:+.2f}  vy {cmd_vec[1]:+.2f}  "
+                          f"wz {cmd_vec[2]:+.2f}   t {time.time() - t_start:5.0f}s  "
+                          f"idle {idle_s:4.1f}s   ", end="", flush=True)
             elif stop["n"]:
                 cmd_vec[:] = 0.0
             if stop["n"]:
                 stop.setdefault("t", time.time())
                 if time.time() - stop["t"] > SETTLE_S:
                     break
-            obs = build_obs().astype(np.float32)[None, :]
-            action = sess.run(None, {in_name: obs})[0][0]
-            last_action = action
-            q_des = default + action * scale
+            if dance["mode"] == "handoff" and not stop["n"]:
+                a = smoothstep(dance["n"])[dance["k"]]
+                q_des = dance["from"] + a * (dance["target"] - dance["from"])
+                action = np.zeros(N_MOTOR)
+                dance["k"] += 1
+                if dance["k"] >= dance["n"]:
+                    dance["mode"] = "dance"
+                    dance["t0"] = time.time()
+                    dance["act"][:] = 0.0
+                    print(f"\r  DANCING: {n_frames} frames, "
+                          f"{n_frames / HZ:.1f}s                         ")
+            elif dance["mode"] == "dance" and not stop["n"]:
+                ref = dance_ref(dance["step"])
+                obs = build_dance_obs(ref).astype(np.float32)[None, :]
+                action = dance_sess.run(
+                    None, {"obs": obs,
+                           "time_step": np.array([[float(dance["step"])]],
+                                                 np.float32)})[dance_names["actions"]][0]
+                dance["act"] = action
+                q_des = default + action * scale
+                dance["step"] += 1
+                if dance["step"] >= n_frames:
+                    print("\n  dance finished -- returning to the walking pose")
+                    dance["mode"] = "handoff_back"
+                    dance["from"] = state["q"].copy()
+                    dance["target"] = default.copy()
+                    dance["k"] = 0
+                    dance["n"] = max(1, int(args.dance_handoff / DT))
+            elif dance["mode"] == "handoff_back" and not stop["n"]:
+                a = smoothstep(dance["n"])[dance["k"]]
+                q_des = dance["from"] + a * (dance["target"] - dance["from"])
+                action = np.zeros(N_MOTOR)
+                dance["k"] += 1
+                if dance["k"] >= dance["n"]:
+                    dance["mode"] = "walk"
+                    last_action = np.zeros(N_MOTOR)
+                    print("\r  back on the walking policy                       ")
+            else:
+                obs = build_obs().astype(np.float32)[None, :]
+                action = sess.run(None, {in_name: obs})[0][0]
+                last_action = action
+                q_des = default + action * scale
             n_clipped = int(np.sum((q_des < jlo) | (q_des > jhi)))
             q_des = np.clip(q_des, jlo, jhi)
             err = np.abs(q_des - state["q"])

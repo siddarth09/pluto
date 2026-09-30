@@ -1,0 +1,19 @@
+"""mjlab play entrypoint that registers the PLUTO mimic tasks first.
+
+The registry is a module-level dict populated at import time, so importing
+pluto.mimic before calling mjlab's own play makes the tasks resolvable without
+modifying mjlab.
+
+    python -m pluto.mimic.play --help
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+import pluto.mimic  # noqa: F401  registers the tasks
+from mjlab.scripts.play import main
+
+if __name__ == "__main__":
+    main()

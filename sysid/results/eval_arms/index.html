@@ -1,0 +1,40 @@
+<html><body style='font-family:sans-serif'><h1>Arm sysid: three models</h1>
+<p>Repeatability floor 0.0163 rad; differences below it are noise.</p>
+<table border=1 cellpadding=6><tr><th>dataset</th><th>N<br><small>nominal everything</small></th><th>A<br><small>nominal armature/damping + measured friction</small></th><th>B<br><small>fitted armature/damping + measured friction</small></th><th>split</th></tr>
+<tr><td>arm_chirp_0</td><td>0.07433</td><td>0.07688</td><td>0.05202</td><td>in fit</td></tr>
+<tr><td>arm_chirp_1</td><td>0.07231</td><td>0.07544</td><td>0.05307</td><td>in fit</td></tr>
+<tr><td>arm_elbow_L</td><td>0.01923</td><td>0.01979</td><td>0.01695</td><td>HELD OUT</td></tr>
+<tr><td>arm_shoulder_L</td><td>0.02078</td><td>0.02052</td><td>0.02103</td><td>HELD OUT</td></tr>
+</table>
+<h2>Per-joint RMSE, arm_chirp_0</h2><table border=1 cellpadding=6><tr><th>joint</th><th>N</th><th>A</th><th>B</th></tr>
+<tr><td>left_elbow_joint</td><td>0.0533</td><td>0.0587</td><td>0.0292</td></tr>
+<tr><td>left_shoulder_pitch_joint</td><td>0.0615</td><td>0.0604</td><td>0.0573</td></tr>
+<tr><td>left_shoulder_roll_joint</td><td>0.0697</td><td>0.0833</td><td>0.0775</td></tr>
+<tr><td>left_shoulder_yaw_joint</td><td>0.0709</td><td>0.0790</td><td>0.0299</td></tr>
+<tr><td>left_wrist_pitch_joint</td><td>0.0378</td><td>0.0359</td><td>0.0120</td></tr>
+<tr><td>left_wrist_roll_joint</td><td>0.0661</td><td>0.0740</td><td>0.0155</td></tr>
+<tr><td>left_wrist_yaw_joint</td><td>0.0406</td><td>0.0396</td><td>0.0141</td></tr>
+<tr><td>right_elbow_joint</td><td>0.1064</td><td>0.1062</td><td>0.0989</td></tr>
+<tr><td>right_shoulder_pitch_joint</td><td>0.2137</td><td>0.2052</td><td>0.1561</td></tr>
+<tr><td>right_shoulder_roll_joint</td><td>0.0709</td><td>0.0761</td><td>0.0722</td></tr>
+<tr><td>right_shoulder_yaw_joint</td><td>0.0656</td><td>0.0685</td><td>0.0533</td></tr>
+<tr><td>right_wrist_pitch_joint</td><td>0.0609</td><td>0.0605</td><td>0.0346</td></tr>
+<tr><td>right_wrist_roll_joint</td><td>0.0757</td><td>0.0828</td><td>0.0397</td></tr>
+<tr><td>right_wrist_yaw_joint</td><td>0.0475</td><td>0.0461</td><td>0.0380</td></tr>
+</table>
+<h2>arm_chirp_0 <small>(in fit)</small></h2>
+<p><b>N</b> nominal everything<br><img src='N/arm_chirp_0/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<p><b>A</b> nominal armature/damping + measured friction<br><img src='A/arm_chirp_0/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<p><b>B</b> fitted armature/damping + measured friction<br><img src='B/arm_chirp_0/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<h2>arm_chirp_1 <small>(in fit)</small></h2>
+<p><b>N</b> nominal everything<br><img src='N/arm_chirp_1/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<p><b>A</b> nominal armature/damping + measured friction<br><img src='A/arm_chirp_1/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<p><b>B</b> fitted armature/damping + measured friction<br><img src='B/arm_chirp_1/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<h2>arm_elbow_L <small>(HELD OUT)</small></h2>
+<p><b>N</b> nominal everything<br><img src='N/arm_elbow_L/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<p><b>A</b> nominal armature/damping + measured friction<br><img src='A/arm_elbow_L/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<p><b>B</b> fitted armature/damping + measured friction<br><img src='B/arm_elbow_L/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<h2>arm_shoulder_L <small>(HELD OUT)</small></h2>
+<p><b>N</b> nominal everything<br><img src='N/arm_shoulder_L/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<p><b>A</b> nominal armature/damping + measured friction<br><img src='A/arm_shoulder_L/joint_trajectories.png' style='width:100%;max-width:1400px'></p>
+<p><b>B</b> fitted armature/damping + measured friction<br><img src='B/arm_shoulder_L/joint_trajectories.png' style='width:100%;max-width:1400px'></p></body></html>

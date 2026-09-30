@@ -1,0 +1,42 @@
+{
+  "robot": "g1_arms",
+  "dataset": "/home/sid/projects25/src/pluto/sysid/data/arm_elbow_L.pt",
+  "model_xml": "/home/sid/projects25/src/sim2real-robot-identification/sysid_mujoco/generated/g1_arms/g1_arms_fixed_base_sysid.xml",
+  "num_samples": 6000,
+  "metrics": {
+    "rmse_mean": 0.019789456912541675,
+    "mae_mean": 0.01818430048490317,
+    "rmse_per_joint": {
+      "left_shoulder_pitch_joint": 0.026549285057581588,
+      "left_shoulder_roll_joint": 0.0384853409232802,
+      "left_shoulder_yaw_joint": 0.00751417982774452,
+      "left_elbow_joint": 0.047139767490983454,
+      "left_wrist_roll_joint": 0.013647012909891383,
+      "left_wrist_pitch_joint": 0.008703560902319997,
+      "left_wrist_yaw_joint": 0.0009703973117975596,
+      "right_shoulder_pitch_joint": 0.00805735673108984,
+      "right_shoulder_roll_joint": 0.07162253966736089,
+      "right_shoulder_yaw_joint": 0.0038148932887488657,
+      "right_elbow_joint": 0.016617370891996577,
+      "right_wrist_roll_joint": 0.02238401964837669,
+      "right_wrist_pitch_joint": 0.010879869705090918,
+      "right_wrist_yaw_joint": 0.0006668024193209124
+    },
+    "mae_per_joint": {
+      "left_shoulder_pitch_joint": 0.022464429888888006,
+      "left_shoulder_roll_joint": 0.03727011599567135,
+      "left_shoulder_yaw_joint": 0.004987843787461701,
+      "left_elbow_joint": 0.040672527417365816,
+      "left_wrist_roll_joint": 0.01341329665822659,
+      "left_wrist_pitch_joint": 0.007235280586777253,
+      "left_wrist_yaw_joint": 0.00034241020652176163,
+      "right_shoulder_pitch_joint": 0.006745599973721091,
+      "right_shoulder_roll_joint": 0.07046184075046395,
+      "right_shoulder_yaw_joint": 0.003562455832700562,
+      "right_elbow_joint": 0.013725342710273241,
+      "right_wrist_roll_joint": 0.022302593138709918,
+      "right_wrist_pitch_joint": 0.010772010564986452,
+      "right_wrist_yaw_joint": 0.0006244592768767055
+    }
+  }
+}
