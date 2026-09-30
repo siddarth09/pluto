@@ -1,11 +1,11 @@
 """Measure arm static breakaway torque on the real G1.
 
-The fit cannot determine Coulomb friction: on the legs it came out across three
-orders of magnitude with under 3% change in predictive accuracy. So measure it
-directly instead. Hold a joint with a ramping torque and record the torque at
-which it starts to move; below breakaway the joint chatters, it does not travel.
+The fit cannot determine Coulomb friction -- it spans orders of magnitude for
+almost no change in predictive accuracy -- so measure it directly. Ramp torque
+into one joint and record the value at which it starts to move. Below breakaway
+the joint chatters, it does not travel.
 
-Runs one joint at a time, all others limp. Only safe with the robot hoisted.
+One joint at a time, the rest held at NEUTRAL. Only safe with the robot hoisted.
 
     python scripts/stiction_arms.py --dry-run
     python scripts/stiction_arms.py --only left_elbow
@@ -47,9 +47,8 @@ EFFORT = np.array([25.0, 25.0, 25.0, 25.0, 25.0, 5.0, 5.0,
 WAIST_KP = np.array([28.50, 28.50, 28.50])
 WAIST_KD = np.array([1.814, 1.814, 1.814])
 
-# Gravity-neutral hanging pose, matching excite_arms.py. The joint under test
-# is released from here; every other joint is held, so the gravity torque at
-# breakaway is the one the model predicts for this pose.
+# Gravity-neutral hanging pose, matching excite_arms.py. The joint under test is
+# released from here and the rest are held.
 NEUTRAL = np.array([0.0, 0.20, 0.0, 1.10, 0.0, 0.0, 0.0,
                     0.0, -0.20, 0.0, 1.10, 0.0, 0.0, 0.0])
 ARM_KP = np.array([14.25, 14.25, 14.25, 14.25, 14.25, 16.78, 16.78,
@@ -57,18 +56,17 @@ ARM_KP = np.array([14.25, 14.25, 14.25, 14.25, 14.25, 16.78, 16.78,
 ARM_KD = np.array([0.907, 0.907, 0.907, 0.907, 0.907, 1.068, 1.068,
                    0.907, 0.907, 0.907, 0.907, 0.907, 1.068, 1.068])
 
-# Released joints are gravity-compensated so the ramp measures friction alone:
-# shoulder_pitch carries 1.68 N m against ~0.1 N m of friction, so without
-# compensation the arm simply falls and the recorded breakaway is just how fast
-# it dropped. Compensation is evaluated at the pose the arm actually settles
-# at, not at nominal NEUTRAL: the servo droops ~0.16 rad under gravity and a
-# NEUTRAL-pose lookup left a 0.36 N m residual on right_shoulder_pitch.
+# The released joint is gravity-compensated so the ramp measures friction alone.
+# Gravity at the shoulders is an order of magnitude above their friction, so
+# uncompensated the arm just falls. Compensation is evaluated at the pose the arm
+# settles at, not at nominal NEUTRAL: the servo droops under gravity and
+# dtau_g/dq is steep at shoulder_roll.
 ARMS_XML = ("/home/sid/projects25/src/sim2real-robot-identification/"
             "sysid_mujoco/generated/g1_arms/g1_arms_fixed_base_sysid.xml")
 
 
 class Gravity:
-    """qfrc_bias for the 14 arm joints at an arbitrary measured pose."""
+    """qfrc_bias for the 14 arm joints at a measured pose."""
 
     def __init__(self, path=ARMS_XML):
         self.m = mujoco.MjModel.from_xml_path(path)
@@ -83,8 +81,7 @@ class Gravity:
         return self.d.qfrc_bias.copy()
 
 RAMP_S = 4.0        # seconds to ramp from zero to the torque ceiling
-# Ceiling only has to cover friction now that gravity is fed forward, so it is
-# far smaller than before: finer resolution on the thing being measured.
+# The ceiling only has to cover friction, so keep it small: finer resolution.
 CEIL_FRAC = 0.15    # ceiling as a fraction of spec torque
 MOVE_THRESH = 0.02  # rad; travel that counts as broken away
 SETTLE_S = 1.0
@@ -161,9 +158,9 @@ def main() -> None:
             mc = cmd.motor_cmd[j]
             mc.mode = 1; mc.dq = 0.0
             if free is not None and n == free:
-                # gravity feedforward plus the ramp; no position feedback.
-                # Clamped: a model that overestimates gravity would otherwise
-                # push the joint away and keep pushing.
+                # gravity feedforward plus the ramp, no position feedback.
+                # Clamped: an overestimate would push the joint away and keep
+                # pushing.
                 t = np.clip(tau_g[n] + tau_arm[n], -0.5 * EFFORT[n], 0.5 * EFFORT[n])
                 mc.q = 0.0; mc.tau = float(t)
                 mc.kp = 0.0; mc.kd = 0.0
@@ -180,9 +177,8 @@ def main() -> None:
         cmd.crc = crc.Crc(cmd)
         pub.Write(cmd)
 
-    # gravity is fed forward, so both directions should return the same mu.
-    # The half-difference is now the gravity-compensation error, i.e. how wrong
-    # TAU_G is at the pose the arm actually settled at.
+    # With gravity fed forward both directions return the same mu; the
+    # half-difference is the compensation error.
     breakaway = np.full((len(NAMES), 2), np.nan)
     traces = {}
     n_ramp = int(args.ramp / DT)
@@ -199,10 +195,9 @@ def main() -> None:
         print(f"gravity at the settled pose {grav.at(state['q']).round(3)}")
         for idx in targets:
             for sign in (+1.0, -1.0):
-                # settle on gravity feedforward alone before ramping. Gravity is
-                # re-evaluated from live encoders every sample: on shoulder_roll
-                # dtau_g/dq is ~8.3 N m/rad, so a 0.05 rad drift during the
-                # measurement is 0.4 N m of error, the size of the friction.
+                # Settle on gravity feedforward alone before ramping, and
+                # re-evaluate it from live encoders every sample: dtau_g/dq is
+                # steep enough that drift during the ramp is the size of mu.
                 for _ in range(int(0.5 / DT)):
                     tau_g = grav.at(state["q"])
                     publish(np.zeros(len(NAMES)), free=idx)
@@ -217,10 +212,10 @@ def main() -> None:
                     publish(tau_arm, free=idx)
                     rec.append((tau_arm[idx], state["q"][idx], state["tau"][idx]))
                     if abs(state["q"][idx] - q0) > MOVE_THRESH:
-                        # the commanded ramp, not tau_est: gravity is already
-                        # fed forward, so this is the friction contribution
+                        # commanded ramp, not tau_est: gravity is already fed
+                        # forward, so this is the friction contribution
                         hit = abs(tau_arm[idx])
-                        break          # measurement done, stop pushing
+                        break          # done, stop pushing
                     time.sleep(DT)
                 for _ in range(n_settle):   # back to NEUTRAL before the next direction
                     publish(np.zeros(len(NAMES)))

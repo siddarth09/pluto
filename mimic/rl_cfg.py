@@ -1,9 +1,7 @@
-"""PPO config for the mimic task.
+"""PPO config for the tracking task.
 
-Wider than mjlab's tracking default (512,256,128): the actor has to map a
-reference pose plus its own state to 29 joint targets, which is a bigger job
-than velocity walking, and PLUTO's velocity policy already used (1024,512,256,128)
-without trouble on this GPU.
+Wider than mjlab's (512,256,128) default: the actor maps a reference pose plus
+its own state to 29 joint targets.
 """
 
 from __future__ import annotations

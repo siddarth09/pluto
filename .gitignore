@@ -1,1 +1,28 @@
-*/__pycache__/
+# Python
+__pycache__/
+*.py[cod]
+
+# Scratch backups left by apply_fit.py, set_measured_friction*.py, and edits
+*.bak
+*.prev
+*.orig
+
+# Per-run scratch, regenerated every time
+MUJOCO_LOG.TXT
+deploy_log.npz
+*.mp4
+
+# Papers: 162 MB and every one is re-downloadable from arXiv.
+# mimic/review/MANIFEST.md has the ids and the fetch command.
+mimic/review/*.pdf
+
+# Raw motion download, re-fetchable with hf download (see mimic/README.md).
+# The 50 Hz clip that training actually consumes IS tracked -- it is 2.8 MB and
+# keeping it means a checkout can train without re-downloading.
+motions/g1-moves/
+**/.cache/
+
+# mjlab / rsl_rl outputs, in case a log dir is ever created inside the repo
+logs/
+outputs/
+wandb/

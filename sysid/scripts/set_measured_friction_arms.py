@@ -1,13 +1,10 @@
-"""Write the hardware-measured static friction into the arm model's frictionloss.
+"""Write the measured static friction into the arm model's frictionloss.
 
-Measured 2026-09-28 by stiction_arms.py with gravity fed forward from live
-encoder positions. Six of seven mirrored pairs agree to within 21%, so those are
-measurements. shoulder_roll does not: 2.19 N m left, over the 3.75 N m ceiling
-right, against 1-2% of rated torque everywhere else. It is installed at the one
-direction that did break away and widened in the randomisation instead.
+Values from stiction_arms.py, gravity fed forward from live encoder positions.
+Six of seven mirrored pairs agree; shoulder_roll does not and is installed at the
+one direction that broke away, then widened in the randomisation.
 
-Regenerate g1_arms.xml first if the model changes: make_arms_xml.py rebuilds it
-from g1_with_hands.xml, and this overwrites frictionloss in place.
+Builds from g1_arms_original.xml. Run make_arms_xml.py first if the model changed.
 
 Pair with `my_fit --freeze frictionloss --start-from-nominal`.
 """
@@ -26,7 +23,7 @@ MEASURED = {
     "left_wrist_pitch_joint": 0.27, "right_wrist_pitch_joint": 0.31,
     "left_wrist_yaw_joint": 0.22, "right_wrist_yaw_joint": 0.20,
 }
-# Only shoulder_roll is unresolved. Everything else is a measurement.
+# Unresolved: breakaway exceeded the torque ceiling on one side.
 UNRESOLVED = ("left_shoulder_roll_joint", "right_shoulder_roll_joint")
 
 

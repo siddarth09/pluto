@@ -1,16 +1,10 @@
-"""Dance17 Shuffle tracking on the system-identified G1.
+"""Motion tracking on the identified G1. Override of mjlab's tracking task.
 
-An override of mjlab's tracking task, the same way pluto.mjlab_g1 overrides the
-velocity task: mjlab is not modified. Three things change from
-`unitree_g1_flat_tracking_env_cfg`:
+Changes from `unitree_g1_flat_tracking_env_cfg`: identified robot cfg and action
+scale, the motion file, and joint/actuator randomisation.
 
-  1. the identified robot cfg and its action scale, in place of the nominal one
-  2. the motion file, pointed at the 50 Hz clip prep_motion.py writes
-  3. joint and actuator randomisation, widths set by the identifiability analysis
-
-has_state_estimation defaults to False. The hardware has no base linear velocity
-estimate, so `base_lin_vel` and `motion_anchor_pos_b` come out of the actor -- the
-same choice PLUTO's velocity policy made, and the reason it was deployable.
+has_state_estimation defaults False: no base velocity estimate on hardware, so
+`base_lin_vel` and `motion_anchor_pos_b` are dropped from the actor.
 """
 
 from __future__ import annotations
@@ -35,21 +29,16 @@ from pluto.mjlab_g1.randomisation import add_identified_randomisation
 MOTION_DIR = Path(__file__).resolve().parent / "motions"
 DEFAULT_MOTION = MOTION_DIR / "J_Dance17_Shuffle_50hz.npz"
 
-# Measured command-to-response lag on this robot was 60-80 ms against the
-# 0-20 ms the velocity policy trained with. Tracking chases a reference, so
-# phase lag becomes tracking error directly: start at the measured value rather
-# than rediscovering it on hardware. 4 steps at 50 Hz = 80 ms.
+# Measured command->response lag is 60-80 ms. 4 steps at 50 Hz = 80 ms.
 DELAY_MAX_LAG = 4
 DELAY_MIN_LAG = 0
 
 
 def _delay_every_actuator(robot_cfg, min_lag: int, max_lag: int):
-    """Apply the command delay to arms, wrists and waist as well as the legs.
+    """Delay every actuator group, not just the legs.
 
-    get_g1_identified_robot_cfg only threads delay into _leg_actuators, which is
-    right for a velocity policy whose arms hold a fixed pose. Tracking a dance
-    drives all 29 joints and the hardware lag applies to all of them, so leaving
-    the arms at zero lag trains against a robot that does not exist.
+    get_g1_identified_robot_cfg only delays _leg_actuators. Tracking drives all
+    29 joints and the lag applies to all of them.
     """
     art = robot_cfg.articulation
     acts = tuple(
@@ -74,8 +63,8 @@ def pluto_g1_mimic_env_cfg(
     if not motion_file.is_file():
         raise SystemExit(
             f"motion not found: {motion_file}\n"
-            "run prep_motion.py first -- mjlab's MotionLoader does not resample, "
-            "so a 60 fps clip plays 1.2x slow at the 50 Hz policy rate."
+            "run ./prep_motion.sh: MotionLoader does not resample, so a 60 fps "
+            "clip plays 1.2x slow at 50 Hz."
         )
 
     cfg = unitree_g1_flat_tracking_env_cfg(
@@ -94,10 +83,8 @@ def pluto_g1_mimic_env_cfg(
     assert isinstance(motion_cmd, MotionCommandCfg)
     motion_cmd.motion_file = str(motion_file)
 
-    # Without base position OR base linear velocity in the actor, the policy
-    # cannot observe where it is, so the global root position term can never be
-    # earned and contributes only gradient variance. Orientation stays: that one
-    # IS observed, via motion_anchor_ori_b, and tracks to 0.08 rad.
+    # Global root position is unobservable without base pos or base lin vel, so
+    # the term only adds variance. Orientation stays: motion_anchor_ori_b sees it.
     if not track_global_root_pos and not has_state_estimation:
         cfg.rewards["motion_global_root_pos"].weight = 0.0
 

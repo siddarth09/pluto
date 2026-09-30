@@ -84,7 +84,7 @@ def projected_gravity(quat_wxyz: np.ndarray) -> np.ndarray:
     ])
 
 
-# tracking policy observation layout, in order, no history:
+# Tracking policy obs layout, in order, no history:
 #   command (ref joint_pos 29 + ref joint_vel 29) | motion_anchor_ori_b 6
 #   | base_ang_vel 3 | joint_pos 29 | joint_vel 29 | actions 29
 DANCE_OBS_DIM = 29 + 29 + 6 + 3 + 29 + 29 + 29
@@ -94,7 +94,7 @@ WAIST_IDX = (12, 13, 14)        # yaw, roll, pitch in SDK order
 
 
 def _dance_frames(sess, names) -> int:
-    """Length of the baked-in clip, found by walking time_step until it repeats."""
+    """Clip length: bisect time_step until the reference stops changing."""
     ref = lambda k: sess.run(None, {"obs": np.zeros((1, DANCE_OBS_DIM), np.float32),
                                     "time_step": np.array([[float(k)]], np.float32)}
                              )[names["joint_pos"]][0]
@@ -126,7 +126,7 @@ def quat_inv(q: np.ndarray) -> np.ndarray:
 
 
 def quat_yaw_only(q: np.ndarray) -> np.ndarray:
-    """The yaw component of q, as a quaternion. Matches mjlab's yaw_quat."""
+    """Yaw component of q as a quaternion. Matches mjlab's yaw_quat."""
     yaw = np.arctan2(2.0 * (q[0] * q[3] + q[1] * q[2]),
                      1.0 - 2.0 * (q[2] ** 2 + q[3] ** 2))
     return np.array([np.cos(0.5 * yaw), 0.0, 0.0, np.sin(0.5 * yaw)])
@@ -144,9 +144,8 @@ def mat_from_quat(q: np.ndarray) -> np.ndarray:
 def torso_quat(imu_quat: np.ndarray, q: np.ndarray, frame: str) -> np.ndarray:
     """Torso orientation in the world from whatever the IMU reports.
 
-    The tracking anchor is torso_link. If the IMU sits in the pelvis, the waist
-    yaw/roll/pitch rotations have to be composed on; if it is already the torso,
-    it is used as is. --probe-imu decides which.
+    The tracking anchor is torso_link, so a pelvis IMU needs the waist
+    yaw/roll/pitch composed on. --probe-imu decides which it is.
     """
     if frame == "torso":
         return imu_quat
@@ -161,10 +160,10 @@ def torso_quat(imu_quat: np.ndarray, q: np.ndarray, frame: str) -> np.ndarray:
 
 
 def rot6_rel(robot_quat: np.ndarray, ref_quat: np.ndarray) -> np.ndarray:
-    """motion_anchor_ori_b: reference anchor orientation in the robot anchor frame,
-    as the first two COLUMNS of the rotation matrix, row-major. 6 values.
+    """Reference anchor orientation in the robot anchor frame, as the first two
+    columns of the rotation matrix, row-major. 6 values.
 
-    Mirrors mjlab's subtract_frame_transforms + matrix_from_quat(...)[..., :2].
+    Mirrors subtract_frame_transforms + matrix_from_quat(...)[..., :2].
     """
     rel = quat_mul(quat_inv(robot_quat), ref_quat)
     return mat_from_quat(rel)[:, :2].reshape(-1)
@@ -312,10 +311,9 @@ def main() -> None:
                     help="motion-tracking policy .onnx; default = newest mimic run. "
                          "Press x during teleop to hand off to it.")
     ap.add_argument("--dance-handoff", type=float, default=2.5,
-                    help="seconds to ramp from the walking pose to the dance's "
-                         "first frame before the tracking policy takes over. The "
-                         "tracking policy expects to start ON the reference; "
-                         "switching instantly shows it a large frame-0 error.")
+                    help="seconds to ramp from the walking pose to the clip's "
+                         "first frame before handing over. The tracking policy "
+                         "expects to start ON the reference.")
     ap.add_argument("--imu-frame", choices=("torso", "pelvis"), default="pelvis",
                     help="which body LowState_.imu_state.quaternion reports. The "
                          "tracking anchor is torso_link, so a pelvis IMU has the "
@@ -367,9 +365,8 @@ def main() -> None:
     expect = (3 + 3 + N_MOTOR + N_MOTOR + N_MOTOR + 3) * hist_len
     assert in_dim == expect, f"onnx expects {in_dim}, layout gives {expect}"
 
-    # the tracking policy: obs[154] + time_step -> actions[29] plus the reference
-    # motion at that step, so the clip is baked into the graph and the robot does
-    # not need the npz.
+    # Tracking policy: obs + time_step -> actions plus the reference at that
+    # step. The clip is baked into the graph, so no npz on the robot.
     dance_sess = dance_names = None
     dance_path = args.dance_onnx
     if dance_path is None:
@@ -472,7 +469,7 @@ def main() -> None:
         n = int(6.0 / DT)
         next_t = time.time()
         for k in range(n):
-            g = min(1.0, k / (0.5 / DT))            # ease the gains in
+            g = min(1.0, k / (0.5 / DT))            # ease gains in
             wp = 0.12 * np.sin(2.0 * np.pi * 0.5 * k * DT)
             q_des = hold.copy()
             q_des[WAIST_IDX[2]] = hold[WAIST_IDX[2]] + wp
@@ -542,7 +539,7 @@ def main() -> None:
              "act": np.zeros(N_MOTOR), "t0": 0.0}
 
     def dance_ref(step: int) -> dict:
-        """Reference joint pos/vel and body quats at `step`, from the graph."""
+        """Reference joint pos/vel and body quats at `step`."""
         out = dance_sess.run(None, {
             "obs": np.zeros((1, DANCE_OBS_DIM), np.float32),
             "time_step": np.array([[float(step)]], np.float32)})
@@ -554,9 +551,9 @@ def main() -> None:
 
     def build_dance_obs(ref: dict) -> np.ndarray:
         robot_q = torso_quat(state["quat"], state["q"], args.imu_frame)
-        # anchor the reference's heading to the robot's at handoff, the way RSI
-        # puts the robot on the reference at episode start in training. Without
-        # this the policy sees a constant, arbitrary yaw error.
+        # Heading is anchored to the robot's at handoff, the way RSI puts the
+        # robot on the reference at episode start. Otherwise the policy sees a
+        # constant arbitrary yaw error.
         ref_q = quat_mul(dance["yaw_fix"], ref["body_quat_w"][DANCE_ANCHOR_BODY])
         return np.concatenate([
             ref["joint_pos"], ref["joint_vel"],
@@ -700,7 +697,7 @@ def main() -> None:
                             dance["from"] = state["q"].copy()
                             dance["k"] = 0
                             dance["n"] = max(1, int(args.dance_handoff / DT))
-                            # freeze the heading offset now, once
+                            # heading offset, frozen once
                             robot_q = torso_quat(state["quat"], state["q"],
                                                  args.imu_frame)
                             ref_q = ref0["body_quat_w"][DANCE_ANCHOR_BODY]

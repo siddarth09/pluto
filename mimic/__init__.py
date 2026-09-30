@@ -4,11 +4,9 @@ Importing this module registers the tasks. Use the entrypoints in this package
 (`train.py`, `play.py`) so the import happens before the task lookup.
 
 Registered:
-  Pluto-Mimic-Dance17-G1                 no randomisation, no delay: the baseline
-                                         you debug against
-  Pluto-Mimic-Dance17-G1-DR              randomisation + 80 ms delay: train this
-  Pluto-Mimic-Dance17-G1-StateEst        with base_lin_vel in the actor; not
-                                         deployable, useful as an upper bound
+  Pluto-Mimic-Dance17-G1           no randomisation, no delay. Debug baseline.
+  Pluto-Mimic-Dance17-G1-DR        randomisation + 80 ms delay. Train this.
+  Pluto-Mimic-Dance17-G1-StateEst  base_lin_vel in the actor. Not deployable.
 """
 
 from mjlab.tasks.registry import register_mjlab_task

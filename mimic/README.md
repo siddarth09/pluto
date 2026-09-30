@@ -8,9 +8,11 @@ as an override of mjlab's tracking task. `~/mjlab` is not modified.
 ```bash
 cd ~/projects25/src/pluto/mimic
 
-# 1. prepare the clip: 60 fps -> 50 Hz. Once per clip.
-./prep_motion.sh
-./prep_motion.sh /path/to/OtherClip.npz          # a different clip
+# 1. get a clip and resample it to 50 Hz. Once per clip.
+./fetch_motion.sh --list                          # every clip in the Space
+./fetch_motion.sh J_Dance17_Shuffle               # download + prep
+./fetch_motion.sh B_SpinKarate --video            # also the mp4s
+./prep_motion.sh /path/to/Already/Downloaded.npz  # prep only
 
 # 2. train
 ./train.sh                                        # DR task, 4096 envs
@@ -51,6 +53,31 @@ below, so it has no arm delay and was graded on the unlearnable root-position te
 Global drift is not a failure: with `has_state_estimation=False` the policy cannot
 observe where it is, so it tracks the *shape* of the dance and wanders. See
 `~/Desktop/pluto-mimic-rewards.html` for the full reward walkthrough.
+
+## Getting other clips
+
+`./fetch_motion.sh --list` prints all 60 clips in the
+[`exptech/g1-moves`](https://huggingface.co/spaces/exptech/g1-moves) Space --
+`J_Dance*` and `B_*Dance*` for dancing, `B_*Karate*`, `B_Fence*`, plus a few
+others. `./fetch_motion.sh <ClipName>` downloads just that clip's npz and
+resamples it in one step.
+
+Each clip in the Space has four artefacts; only the first is needed for training:
+
+| path | what |
+|---|---|
+| `training/<Clip>.npz` | the retargeted motion, 60 fps |
+| `capture/<Clip>.mp4` | the source human video |
+| `retarget/<Clip>_retarget.mp4` | the retarget preview |
+| `policy/<Clip>_policy.onnx` | someone else's trained policy for it |
+
+To train on a different clip, point `DEFAULT_MOTION` in `env_cfgs.py` at the new
+`motions/<Clip>_50hz.npz` and rename the tasks in `__init__.py`.
+
+The npz needs no retargeting: 29 joints in the G1's SDK order, 30 bodies
+`pelvis .. right_wrist_yaw_link`, MuJoCo `wxyz` quaternions. Verified by setting
+the model's qpos from the file and comparing forward kinematics against the
+stored body positions -- agreement under a micron.
 
 ## Tasks
 

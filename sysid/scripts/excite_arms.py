@@ -1,10 +1,9 @@
-"""Commanded arm excitation on the real G1, recorded in the sysid dataset format.
+"""Commanded arm excitation on the real G1, in the sysid dataset format.
 
-Same method as excite_legs.py, different mounting. The harness holds the torso
-through the shoulders, so the torso is the fixed body and the arms hang free.
-The waist is held at FULL gain, not limp: that is what makes the pelvis and the
-legs rigid with the harnessed torso, which is the assumption g1_arms.xml is
-built on. The legs stay limp and hang.
+Same method as excite_legs.py, different mounting: the harness holds the torso,
+so the torso is the fixed body and the arms hang free. The waist is held at FULL
+gain, not limp -- that is what makes the pelvis and legs rigid with the harnessed
+torso, which g1_arms.xml assumes. The legs hang limp.
 
 Only safe with the robot hoisted. Sequence: hold current pose -> ramp gains in
 -> ramp to trajectory start -> excite -> ramp back -> gains out. The watchdog
@@ -57,46 +56,40 @@ LIMIT_HI = np.array([2.6704, 2.2515, 2.6180, 2.0944, 1.97222, 1.61443, 1.61443,
 # Per-joint spec torque: 5020 for shoulders/elbow/wrist_roll, 4010 for wrist p/y.
 EFFORT = np.array([25.0, 25.0, 25.0, 25.0, 25.0, 5.0, 5.0,
                    25.0, 25.0, 25.0, 25.0, 25.0, 5.0, 5.0])
-# Measured 2026-09-28 by stiction_arms.py with gravity fed forward from live
-# encoder positions. Six of seven mirrored pairs agree within 21%. shoulder_roll
-# does not and is unresolved: 2.19 left, over the 3.75 ceiling right.
+# From stiction_arms.py. shoulder_roll is unresolved: its breakaway exceeded the
+# torque ceiling on the right side.
 STICTION = np.array([0.65, 2.19, 0.50, 0.48, 0.46, 0.27, 0.22,
                      0.60, 1.81, 0.52, 0.61, 0.46, 0.31, 0.20])
-# Gravity-neutral hanging pose, not the joint midpoint. qpos=0 puts 3.64 N m on
-# shoulder_pitch, 0.26 rad of sag at kp=14.25 before any motion is commanded.
+# Gravity-neutral hanging pose, not the joint midpoint: qpos=0 sags 0.26 rad at
+# shoulder_pitch before any motion is commanded.
 NEUTRAL = np.array([0.0, 0.20, 0.0, 1.10, 0.0, 0.0, 0.0,
                     0.0, -0.20, 0.0, 1.10, 0.0, 0.0, 0.0])
 # Shoulder pitch and roll are droop-bound at 0.35 rad; the rest bind on limits.
 AMP_MAX = np.array([0.80, 0.40, 1.50, 0.89, 1.50, 1.50, 1.50,
                     0.80, 0.40, 1.50, 0.89, 1.50, 1.50, 1.50])
-# High-frequency amplitude, per joint rather than one scalar. The 5020 joints
-# droop rather than draw current, so they need the amplitude raised to clear
-# breakaway. The 4010 wrists have 5 N m against a ~6 Hz bandwidth, so they track
-# the top segment properly and pull real torque: right_wrist_yaw tripped the
-# torque guard at 4.6 N m on 0.25 rad.
+# High-frequency amplitude, per joint rather than one scalar. The 5020s droop
+# instead of drawing current and need more amplitude to clear breakaway; the
+# 4010 wrists track the top segment properly and pull real torque, so they need
+# less.
 HF_AMP = np.array([0.40, 0.40, 0.40, 0.40, 0.40, 0.16, 0.16,
                    0.40, 0.40, 0.40, 0.40, 0.40, 0.16, 0.16])
 
-# rad. Droop is the mechanism, not a fault: it scales as tau/kp, and arm kp is
-# 14.25 against the legs' 40-99, so one joint pulling 8 N m already droops
-# 0.58 rad. Runaway is caught by MAX_VEL and TAU_GUARD_FRAC instead.
+# rad. Droop is the mechanism, not a fault, and scales as tau/kp -- arm kp is a
+# third of the legs'. Runaway is caught by the velocity and torque guards.
 MAX_TRACK_ERR = 1.20
-# Per-joint from the motor rating, not a flat number: 5020 is rated 37 rad/s and
-# 4010 is 22, so a flat 8 rad/s would abort healthy excitation. Same mistake the
-# flat 12 rad/s guard made on the legs.
+# Per-joint from the motor rating: 5020 is 37 rad/s, 4010 is 22. A flat guard
+# aborts healthy excitation.
 VEL_LIMIT = np.array([37.0, 37.0, 37.0, 37.0, 37.0, 22.0, 22.0,
                       37.0, 37.0, 37.0, 37.0, 37.0, 22.0, 22.0])
 VEL_GUARD_FRAC = 0.50
 TAU_GUARD_FRAC = 0.90  # fraction of spec torque
-# Stick-slip release is a 15 ms torque spike and it is signal, not a fault: on
-# right_wrist_pitch it hit 4.55 N m for 3 samples while the run mean was 1.02.
-# Require the limit to be held before aborting; a real overload persists.
+# Stick-slip release is a few-sample torque spike, and it is signal. Require the
+# limit to be held before aborting: a real overload persists.
 GUARD_HOLD = 10        # consecutive samples over limit before aborting
 
-# Stepped frequencies, not a continuous chirp. Arm servos are softer than the
-# legs relative to their load, so the top segment stays at 3 Hz: the intended
-# 10 Hz bandwidth is really ~1.6 Hz once the real swung inertia is used, and
-# the legs run already showed that excitation far above bandwidth buys nothing.
+# Stepped frequencies, not a continuous chirp. Top segment stays at 3 Hz: the
+# nominal 10 Hz servo bandwidth is really ~1.6 Hz once the swung inertia is used,
+# and excitation far above bandwidth buys nothing.
 SEGMENTS = ((0.5, 12.0, None),    # damping, frictionloss: slow, large, reversals
             (1.0, 6.0, None),
             (2.0, 6.0, "hf"),     # armature: acceleration scales as f^2
@@ -154,9 +147,9 @@ def main() -> None:
                     help="override HF_AMP for every joint, rad. Leave unset to "
                          "use the per-joint table, which derates the 4010 wrists.")
     ap.add_argument("--kp-scale", type=float, default=1.0,
-                    help="fraction of config.Kp; Kd scales as sqrt to hold damping "
-                         "ratio. Unlike the legs, leave this at 1.0: nominal arm kp "
-                         "is 14.25, and halving it may not break stiction.")
+                    help="fraction of config.Kp; Kd scales as sqrt to hold the "
+                         "damping ratio. Leave at 1.0: nominal arm kp is low "
+                         "enough that halving it may not break stiction.")
     ap.add_argument("--amp-scale", type=float, default=1.0, help="extra amplitude derate")
     ap.add_argument("--ramp", type=float, default=3.0, help="seconds for each ramp phase")
     ap.add_argument("--centre", type=float, default=None,
@@ -172,8 +165,8 @@ def main() -> None:
                     help="watchdog tracking-error limit, rad")
     ap.add_argument("--waist-kp-scale", type=float, default=1.0,
                     help="gain holding the waist at its current pose. Full gain "
-                         "keeps the pelvis rigid with the harnessed torso, which "
-                         "is what g1_arms.xml assumes. Do not lower this.")
+                         "keeps the pelvis rigid with the harnessed torso. Do "
+                         "not lower this.")
     ap.add_argument("--iface", default="enp130s0")
     ap.add_argument("--out", default="arm_chirp_0.pt")
     ap.add_argument("--dir", default="/home/sid/projects25/src/pluto/sysid/data")
@@ -320,8 +313,8 @@ def main() -> None:
             mc.tau = 0.0
             mc.kp = float(kp[n] * gain)
             mc.kd = float(kd[n] * gain)
-        # waist at full gain throughout: this is what makes the pelvis and legs
-        # rigid with the harnessed torso, which g1_arms.xml assumes.
+        # Waist at full gain throughout: makes the pelvis and legs rigid with
+        # the harnessed torso.
         for n, j in enumerate(WAIST_IDX):
             mc = cmd.motor_cmd[j]
             mc.mode = 1

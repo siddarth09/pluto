@@ -1,19 +1,11 @@
-"""Arm and waist randomisation, on top of the leg terms from the velocity task.
+"""Arm and waist randomisation, additive to the leg terms in mjlab_g1.
 
-Widths come from the arm identification of 2026-09-28 (sysid/results/
-arm_stiction.npz and the tau_est gain regression), the same way the leg widths
-came from the leg analysis. Tracking a whole-body motion uses the arms hard, so
-unlike the velocity task these cannot be left out.
+Widths follow the identifiability verdicts in sysid/results/. Tracking drives the
+arms hard, so unlike the velocity task these cannot be left out.
 
-Verdicts that set these numbers:
-- actuator gain: MEASURED at 0.92-1.06 across 12 of 14 joints, two independent
-  recordings agreeing to 0.002. Unlike the legs there is no bias to correct, so
-  the model keeps nominal gain and this is uncertainty about that.
-- frictionloss: MEASURED 0.20-0.59 for six of seven mirrored pairs. shoulder_roll
-  is NOT resolved (2.19 left, over the 3.75 ceiling right) and gets its own wide
-  range.
-- armature: NOT identified. Six values pinned at their lower bound and mirrored
-  joints disagreed 2-150x, so the motor spec stands and the range is wide.
+  actuator gain   identified near unity; nominal gain stands, range is its error
+  frictionloss    measured, except shoulder_roll, which gets its own wide range
+  armature        not identified; motor spec stands, range is wide
 """
 
 from __future__ import annotations
@@ -86,8 +78,8 @@ def add_arm_randomisation(
             "asset_cfg": SceneEntityCfg("robot", joint_names=SHOULDER_ROLL),
         },
     )
-    # The waist was never identified: it was clamped at full gain to make the
-    # arm experiment valid, so every width here is ignorance, not measurement.
+    # Waist was never identified -- clamped at full gain during the arm run.
+    # These widths are ignorance, not measurement.
     cfg.events["waist_actuator_gain"] = EventTermCfg(
         func=dr.pd_gains,
         mode=mode,
